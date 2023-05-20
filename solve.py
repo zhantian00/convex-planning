@@ -1,6 +1,6 @@
 import numpy as np
 import cvxpy as cp
-from cvxpy import Variable, Problem, Minimize
+from cvxpy import Variable, Problem, Minimize, Parameter
 import matplotlib.pyplot as plt
 import logging
 import argparse
@@ -69,6 +69,9 @@ def solve_problem_alg1(cfg):
     delta.value = np.array([1.1] * N)
     eta = Variable(M, integer=True)
 
+    last_delta = Parameter(N)
+    last_delta.value = delta.value
+
     dx = abs(x_f - x_0) / N
     # define objective
     c_transpose = np.array([dx / V] * N)
@@ -85,7 +88,10 @@ def solve_problem_alg1(cfg):
         vartheta[0] == yaw2vartheta(yaw_0),
         vartheta[N-1] == yaw2vartheta(yaw_f)
     ]
-    linear_inequality_constraint = dynamics_constraint + terminal_constraint
+    control_constraint = [
+        cp.abs(u[i]) <= UAV_ANGULAR_RATE_MAX / V * (3 * last_delta[i]**2 * delta[i] - 2 * last_delta[i]**3) for i in range(N)
+    ]
+    linear_inequality_constraint = dynamics_constraint + terminal_constraint + control_constraint
 
     generalized_inequality_constraint = [delta[i] >= cp.norm(1 + vartheta[i]) for i in range(N)]
 
@@ -103,20 +109,16 @@ def solve_problem_alg1(cfg):
     
     constraints = linear_inequality_constraint + generalized_inequality_constraint + discretized_constraint
 
-    last_delta = delta.value
     converged = False
     ITER = 0
     total_time = 0
     while not converged:
-        control_constraint = [
-            cp.abs(u[i]) <= UAV_ANGULAR_RATE_MAX / V * (3 * last_delta[i]**2 * delta[i] - 2 * last_delta[i]**3) for i in range(N)
-        ] # TODO: If you need to solve this problem multiple times, but with different data, consider using parameters.
-        problem = Problem(objective, constraints + control_constraint)
-        problem.solve(solver=cp.ECOS_BB, mi_max_iters=1, verbose=True)
+        problem = Problem(objective, constraints)
+        problem.solve(solver=cp.ECOS_BB, mi_max_iters=1, verbose=True if args.log_level=='DEBUG' else False)
         runtime = problem.solver_stats.solve_time
         total_time += runtime
-        converged = np.max(np.abs(delta.value - last_delta)) < CONVERENCE
-        last_delta = delta.value
+        converged = np.max(np.abs(delta.value - last_delta.value)) < CONVERENCE
+        last_delta.value = delta.value
         ITER += 1
         logger.info('Iters: {}'.format(ITER))
         logger.info('Problem status: {}'.format(problem.status))
