@@ -51,6 +51,7 @@ def solve_problem_test(cfg=None):
     logger.info(problem.status)
     return
 
+
 def solve_problem_alg1(cfg):
     # read params
     N = cfg.NUM_POINTS
@@ -81,6 +82,7 @@ def solve_problem_alg1(cfg):
     dynamics_constraint = \
         [(y_traj[i+1] - y_traj[i]) / dx == vartheta[i] for i in range(N-1)] \
         + [(vartheta[i+1] - vartheta[i]) / dx == u[i] for i in range(N-1)]
+    def yaw2vartheta(yaw): return np.tan(np.deg2rad(yaw))
     terminal_constraint = [
         y_traj[0] == y_0,
         y_traj[N-1] == y_f,
@@ -121,18 +123,34 @@ def solve_problem_alg1(cfg):
     logger.info('Optimal Problem objective value: {}'.format(problem.value))
     logger.info('Iters: {}'.format(ITER))
     logger.info('Problem status: {}'.format(problem.status))
-    draw_traj(y_traj.value, 0)
+    draw_traj(y_traj.value, vartheta.value, obstacles)
     return
 
-def yaw2vartheta(yaw):
-    return np.tan(np.deg2rad(yaw))
 
-def draw_traj(y, obs):
+def draw_traj(y, theta, obstacles):
     N = cfg.NUM_POINTS
     x_0, y_0, yaw_0 = cfg.UAV_START_STATE
     x_f, y_f, yaw_f = cfg.UAV_FINAL_STATE
     x = np.arange(x_0, x_f, (x_f - x_0)/N)
-    plt.plot(x, y)
+    fig, ax = plt.subplots()
+    for obs in obstacles:
+        x_obs, y_obs, r_obs = obs
+        circle = plt.Circle((x_obs, y_obs), r_obs, fill=False)
+        ax.add_patch(circle)
+
+    theta = np.arctan(theta)
+    for i in range(N):
+        if i % 10 == 0 or i == N-1:
+            _x = x[i]
+            _y = y[i]
+            heading = theta[i]
+            arrow_length = 1
+            dx = arrow_length * np.cos(heading)
+            dy = arrow_length * np.sin(heading)
+            ax.arrow(_x, _y, dx, dy,head_width=1.5, head_length=1.5, fc='red', ec='red')
+    
+    plt.plot(x, y, zorder=0)
+    plt.axis('equal')
     plt.xlabel("x(m)")
     plt.ylabel("y(m)")
     plt.savefig('./results/fig.png')
