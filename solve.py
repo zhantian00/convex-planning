@@ -1,6 +1,4 @@
 import numpy as np
-import scipy
-import ecos
 import cvxpy as cp
 from cvxpy import Variable, Problem, Minimize
 import matplotlib.pyplot as plt
@@ -13,18 +11,19 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-l', '--log-level', default='INFO', type=str,
                     choices=['DEBUG', 'INFO', 'WARNING'],
                     help='Configure the logging level.')
-parser.add_argument('-a', default=1, type=int, choices=[0,1,2],
+parser.add_argument('-a', '--alg', default=1, type=int, choices=[0,1,2],
                     help='Choose algorithm 1 or 2 (or 0 for test).')
 args = parser.parse_args()
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s => %(message)s', level=args.log_level)
 logger = logging.getLogger("logger")
 
+
 def main():
     logger.info(args)
     logger.info('config info: \n{}'.format(cfg))
-    if args.a == 0:
+    if args.alg == 0:
         solve_problem_test(cfg)
-    elif args.a == 1:
+    elif args.alg == 1:
         solve_problem_alg1(cfg)
     else:
         ValueError('Algorithm not defined')
@@ -55,67 +54,88 @@ def solve_problem_test(cfg=None):
 def solve_problem_alg1(cfg):
     # read params
     N = cfg.NUM_POINTS
-    M = cfg.OBSTACLES
+    obstacles = cfg.OBSTACLES
+    M = len(obstacles)
     D = cfg.LARGE_CONSTANT_D
     V = cfg.UAV_VELOCITY
     CONVERENCE = cfg.EPSILON_DELTA
     UAV_ANGULAR_RATE_MAX = np.deg2rad(cfg.UAV_ANGULAR_RATE_MAX)
-    x_0, y_0, yaw_0 = cfg.UAV_START_POSITION
-    x_f, y_f, yaw_f = cfg.UAV_FINAL_POSITION
-    
-
+    x_0, y_0, yaw_0 = cfg.UAV_START_STATE
+    x_f, y_f, yaw_f = cfg.UAV_FINAL_STATE
+    x_traj = np.arange(x_0, x_f, (x_f - x_0)/N)
     # define optimization variables
-    y = Variable(N)
+    y_traj = Variable(N)
     vartheta = Variable(N)
     u = Variable(N)
     delta = Variable(N)
-    z = cp.hstack([y, vartheta, u, delta]).T
-    eta = Variable(M)
+    delta.value = np.array([1.1] * N)
+    eta = Variable(M, integer=True)
 
+    dx = abs(x_f - x_0) / N
     # define objective
-    c_transpose = np.array([0] * N * 3 + [abs(x_f - x_0) / V] * N)
-    objective = Minimize(cp.sum(c_transpose @ z))
+    c_transpose = np.array([dx / V] * N)
+    objective = Minimize(cp.sum(c_transpose @ delta))
 
     # define constraints
-    dx = abs(x_f - x_0) / N
+
     dynamics_constraint = \
-        [cp.abs((y[i+1] - y[i]) / dx - vartheta[i]) <= cfg.DYNAMICS_TOLERANCE for i in range(N-1)] \
-        + [cp.abs((vartheta[i+1] - vartheta[i]) / dx - u[i]) <= cfg.DYNAMICS_TOLERANCE for i in range(N-1)]
+        [(y_traj[i+1] - y_traj[i]) / dx == vartheta[i] for i in range(N-1)] \
+        + [(vartheta[i+1] - vartheta[i]) / dx == u[i] for i in range(N-1)]
     terminal_constraint = [
-        y[0] == y_0,
-        y[N-1] == y_f,
+        y_traj[0] == y_0,
+        y_traj[N-1] == y_f,
         vartheta[0] == yaw2vartheta(yaw_0),
         vartheta[N-1] == yaw2vartheta(yaw_f)
     ]
     linear_inequality_constraint = dynamics_constraint + terminal_constraint
 
-    genralized_inequality_constraint = [delta[i] >= cp.sqrt(1 + vartheta[i]**2) for i in range(N)]
-    discretized_constraint = []
-    
-    constraints = linear_inequality_constraint + genralized_inequality_constraint + discretized_constraint
+    generalized_inequality_constraint = [delta[i] >= cp.norm(1 + vartheta[i]) for i in range(N)]
 
-    last_delta = np.array([UAV_ANGULAR_RATE_MAX / V] * N)
+    discretized_constraint = []
+    # for j, obs in enumerate(obstacles):
+    #     x_obs, y_obs, r_obs = obs
+    #     def in_proj_of_obstacle(x): return x <= x_obs + r_obs and x >= x_obs - r_obs 
+    #     discretized_constraint += [y_traj[i] >= y_obs + np.sqrt(r_obs**2 - (x_traj[i] - x_obs)**2) + D * (eta[j] - 1) for i in range(N) if in_proj_of_obstacle(x_traj[i])]
+    #     discretized_constraint += [y_traj[i] <= y_obs - np.sqrt(r_obs**2 - (x_traj[i] - x_obs)**2) + D * eta[j] for i in range(N) if in_proj_of_obstacle(x_traj[i])]
+    #     discretized_constraint += [eta[j] >=0, eta[j] <= 1] 
+    
+    constraints = linear_inequality_constraint + generalized_inequality_constraint + discretized_constraint
+
+    last_delta = delta.value
     converged = False
-    end = time.time()
+    ITER = 0
+    total_time = 0
     while not converged:
-        # control_constraint = [
-        #     cp.abs(u[i]) <= UAV_ANGULAR_RATE_MAX / V * (3 * last_delta[i]**2 * delta[i] - 2 * last_delta[i]**3) for i in range(N)
-        # ]
-        problem = Problem(objective, constraints)# + control_constraint)
-        problem.solve(solver=cp.ECOS_BB, max_iters=1) 
+        control_constraint = [
+            cp.abs(u[i]) <= UAV_ANGULAR_RATE_MAX / V * (3 * last_delta[i]**2 * delta[i] - 2 * last_delta[i]**3) for i in range(N)
+        ]
+        problem = Problem(objective, constraints + control_constraint)
+        end = time.time()
+        problem.solve(solver=cp.ECOS_BB, mi_max_iters=1)
+        total_time += time.time() - end
         converged = np.max(np.abs(delta.value - last_delta)) < CONVERENCE
         last_delta = delta.value
-        print(delta.value)
+        ITER += 1
 
-
-    logger.info('Time consumption: {}s'.format(time.time() - end))
+    logger.info('Alg time consumption: {}s'.format(total_time))
     logger.info('Optimal Problem objective value: {}'.format(problem.value))
-    logger.info(problem.status)
-
+    logger.info('Iters: {}'.format(ITER))
+    logger.info('Problem status: {}'.format(problem.status))
+    draw_traj(y_traj.value, 0)
     return
 
 def yaw2vartheta(yaw):
-    return np.tan(yaw)
+    return np.tan(np.deg2rad(yaw))
+
+def draw_traj(y, obs):
+    N = cfg.NUM_POINTS
+    x_0, y_0, yaw_0 = cfg.UAV_START_STATE
+    x_f, y_f, yaw_f = cfg.UAV_FINAL_STATE
+    x = np.arange(x_0, x_f, (x_f - x_0)/N)
+    plt.plot(x, y)
+    plt.xlabel("x(m)")
+    plt.ylabel("y(m)")
+    plt.savefig('./results/fig.png')
 
 if __name__ == '__main__':
     main()
