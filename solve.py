@@ -8,7 +8,7 @@ from config import cfg
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-l', '--log-level', default='INFO', type=str,
-                    choices=['DEBUG', 'INFO', 'WARNING'],
+                    choices=['DEBUG', 'INFO'],
                     help='Configure the logging level.')
 parser.add_argument('-a', '--alg', default=1, type=int, choices=[0,1,2],
                     help='Choose algorithm 1 or 2 (or 0 for test).')
@@ -108,15 +108,14 @@ def solve_problem_alg1(cfg):
     #     print([y_obs - np.sqrt(r_obs**2 - (x_traj[i] - x_obs)**2) for i in range(N) if in_proj_of_obstacle(x_traj[i])])
     
     constraints = linear_inequality_constraint + generalized_inequality_constraint + discretized_constraint
+    problem = Problem(objective, constraints)
 
     converged = False
     ITER = 0
     total_time = 0
     while not converged:
-        problem = Problem(objective, constraints)
         problem.solve(solver=cp.ECOS_BB, mi_max_iters=1, verbose=True if args.log_level=='DEBUG' else False)
-        runtime = problem.solver_stats.solve_time
-        total_time += runtime
+        total_time += problem.solver_stats.solve_time
         converged = np.max(np.abs(delta.value - last_delta.value)) < CONVERENCE
         last_delta.value = delta.value
         ITER += 1
