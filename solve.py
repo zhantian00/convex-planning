@@ -37,10 +37,7 @@ def solve_problem(cfg):
     x_traj = np.arange(x_0, x_f, (x_f - x_0)/N)
     dx = abs(x_f - x_0) / N
     C = dx / V
-    if args.alg == 2:
-        CONVERENCE = 10000000
-    else:
-        CONVERENCE = cfg.RELATIVE_TOLERANCE * C * N
+    CONVERENCE = cfg.RELATIVE_TOLERANCE * C * N
     # define optimization variables
     # -----------------------------
     y_traj = Variable(N)
@@ -74,7 +71,8 @@ def solve_problem(cfg):
 
     linear_inequality_constraint = dynamics_constraint + terminal_constraint + control_constraint
 
-    generalized_inequality_constraint = [delta[i] >= cp.norm(1 + vartheta[i]) for i in range(N)]
+    # generalized_inequality_constraint = [delta[i] >= cp.norm(1 + vartheta[i]) for i in range(N)]
+    generalized_inequality_constraint = [cp.SOC(delta[i], cp.hstack([1, vartheta[i]])) for i in range(N)]
 
     discretized_constraint = []
     for j, obs in enumerate(obstacles):
@@ -83,7 +81,6 @@ def solve_problem(cfg):
         discretized_constraint += [y_traj[i] >= y_obs + np.sqrt(r_obs**2 - (x_traj[i] - x_obs)**2) + D * (eta[j] - 1) for i in range(N) if in_proj_of_obstacle(x_traj[i])]
         discretized_constraint += [y_traj[i] <= y_obs - np.sqrt(r_obs**2 - (x_traj[i] - x_obs)**2) + D * eta[j] for i in range(N) if in_proj_of_obstacle(x_traj[i])]
         discretized_constraint += [eta[j] >= 0, eta[j] <= 1]
-
     
     constraints = linear_inequality_constraint + generalized_inequality_constraint + discretized_constraint
     problem = Problem(objective, constraints)
@@ -99,7 +96,6 @@ def solve_problem(cfg):
     logger.info('Optimal Problem objective value: {}'.format(problem.value))
     logger.info('Decisions: {}'.format(eta.value))
     draw_traj(y_traj.value, vartheta.value, obstacles)
-
 
     logger.debug([np.abs(u.value[i]) <= UAV_ANGULAR_RATE_MAX / V * delta.value[i]**3 for i in range(N)])
     return
@@ -128,10 +124,9 @@ def draw_traj(y, theta, obstacles):
             dy = arrow_length * np.sin(heading)
             ax.arrow(_x, _y, dx, dy,head_width=1.5, head_length=1.5, fc='red', ec='red')
     
-    plt.plot(x, y, linewidth=3,zorder=0)
-    ax.set_xlim([0, 100])
+    ax.plot(x, y, linewidth=3, zorder=0)
+    ax.set_xlim([-5, 105])
     ax.set_ylim([-40, 40])
-    plt.axis('equal')
     plt.xlabel("x(m)")
     plt.ylabel("y(m)")
     plt.savefig('./results/{}_fig.png'.format(cfg.SAVE_NAME))
