@@ -64,6 +64,7 @@ def solve_problem_alg1(cfg):
     # define optimization variables
     # -----------------------------
     y_traj = Variable(N)
+    y_traj.value = np.zeros(N)
     vartheta = Variable(N)
     u = Variable(N)
     delta = Variable(N)
@@ -72,8 +73,6 @@ def solve_problem_alg1(cfg):
 
     last_delta_squred = Parameter(N)
     last_delta_cubic = Parameter(N)
-    last_delta_squred.value = np.power(delta.value, 2)
-    last_delta_cubic.value = np.power(delta.value, 3)
 
     dx = abs(x_f - x_0) / N
     # define objective
@@ -110,9 +109,6 @@ def solve_problem_alg1(cfg):
     #     discretized_constraint += [y_traj[i] <= y_obs - np.sqrt(r_obs**2 - (x_traj[i] - x_obs)**2) + D * eta[j] for i in range(N) if in_proj_of_obstacle(x_traj[i])]
     #     discretized_constraint += [eta[j] >= 0, eta[j] <= 1]
 
-    #     print([x_traj[i] for i in range(N) if in_proj_of_obstacle(x_traj[i])])
-    #     print([y_obs + np.sqrt(r_obs**2 - (x_traj[i] - x_obs)**2) for i in range(N) if in_proj_of_obstacle(x_traj[i])])
-    #     print([y_obs - np.sqrt(r_obs**2 - (x_traj[i] - x_obs)**2) for i in range(N) if in_proj_of_obstacle(x_traj[i])])
     
     constraints = linear_inequality_constraint + generalized_inequality_constraint + discretized_constraint
     problem = Problem(objective, constraints)
@@ -120,18 +116,16 @@ def solve_problem_alg1(cfg):
     # solve by iteration
     # ------------------
     converged = False
-    ITER = 0
     total_time = 0
-    last_delta = delta.value
     while not converged:
-        problem.solve(solver=cp.ECOS_BB, mi_max_iters=1, verbose=True if args.log_level=='DEBUG' else False)
-        total_time += problem.solver_stats.solve_time
-        converged = np.max(np.abs(delta.value - last_delta)) < CONVERENCE
-        last_delta = delta.value
         last_delta_squred.value = np.power(delta.value, 2)
         last_delta_cubic.value = np.power(delta.value, 3)
-        ITER += 1
-        logger.info('Iters: {}'.format(ITER))
+        last_delta = delta.value
+        problem.solve(solver='ECOS_BB', max_iters=10, verbose=True if args.log_level=='DEBUG' else False)
+        total_time += problem.solver_stats.solve_time
+
+        converged = np.max(np.abs(delta.value - last_delta)) < CONVERENCE
+        logger.info('Iters: {}'.format(problem.solver_stats.num_iters))
         logger.info('Problem status: {}'.format(problem.status))
 
     logger.info('Alg time consumption: {}s'.format(total_time))
