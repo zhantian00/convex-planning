@@ -10,7 +10,7 @@ _C.LARGE_CONSTANT_D = 1000
 _C.EPSILON_DELTA = 0.01
 
 # state: x, y (in meters), yaw (in deg)
-_C.UAV_START_STATE = [0.0, 0.0, 60.0]
+_C.UAV_START_STATE = [0.0, 0.0, 30.0]
 _C.UAV_FINAL_STATE = [100.0, 0.0, 0.0]
 
 # x, y, radius
