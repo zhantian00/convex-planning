@@ -3,7 +3,6 @@ import cvxpy as cp
 from cvxpy import Variable, Problem, Minimize
 import matplotlib.pyplot as plt
 import logging
-import time
 import argparse
 from config import cfg
 
@@ -43,9 +42,7 @@ def solve_problem_test(cfg=None):
     objective = Minimize(cp.sum_squares(z) + cp.sum_squares(y))
     problem = Problem(objective, constraints)
 
-    end = time.time()
     problem.solve(solver=cp.ECOS_BB)
-    logger.info('Time consumption: {}s'.format(time.time() - end))
     logger.info('Optimal Problem objective value: {}'.format(problem.value))
     logger.info('x1 {}, x2 {}, y {}'.format(x1.value, x2.value, y.value))
     logger.info(problem.status)
@@ -78,7 +75,6 @@ def solve_problem_alg1(cfg):
     objective = Minimize(cp.sum(c_transpose @ delta))
 
     # define constraints
-
     dynamics_constraint = \
         [(y_traj[i+1] - y_traj[i]) / dx == vartheta[i] for i in range(N-1)] \
         + [(vartheta[i+1] - vartheta[i]) / dx == u[i] for i in range(N-1)]
@@ -99,7 +95,11 @@ def solve_problem_alg1(cfg):
     #     def in_proj_of_obstacle(x): return x <= x_obs + r_obs and x >= x_obs - r_obs 
     #     discretized_constraint += [y_traj[i] >= y_obs + np.sqrt(r_obs**2 - (x_traj[i] - x_obs)**2) + D * (eta[j] - 1) for i in range(N) if in_proj_of_obstacle(x_traj[i])]
     #     discretized_constraint += [y_traj[i] <= y_obs - np.sqrt(r_obs**2 - (x_traj[i] - x_obs)**2) + D * eta[j] for i in range(N) if in_proj_of_obstacle(x_traj[i])]
-    #     discretized_constraint += [eta[j] >=0, eta[j] <= 1] 
+    #     discretized_constraint += [eta[j] >= 0, eta[j] <= 1]
+
+    #     print([x_traj[i] for i in range(N) if in_proj_of_obstacle(x_traj[i])])
+    #     print([y_obs + np.sqrt(r_obs**2 - (x_traj[i] - x_obs)**2) for i in range(N) if in_proj_of_obstacle(x_traj[i])])
+    #     print([y_obs - np.sqrt(r_obs**2 - (x_traj[i] - x_obs)**2) for i in range(N) if in_proj_of_obstacle(x_traj[i])])
     
     constraints = linear_inequality_constraint + generalized_inequality_constraint + discretized_constraint
 
@@ -110,19 +110,19 @@ def solve_problem_alg1(cfg):
     while not converged:
         control_constraint = [
             cp.abs(u[i]) <= UAV_ANGULAR_RATE_MAX / V * (3 * last_delta[i]**2 * delta[i] - 2 * last_delta[i]**3) for i in range(N)
-        ]
+        ] # TODO: If you need to solve this problem multiple times, but with different data, consider using parameters.
         problem = Problem(objective, constraints + control_constraint)
-        end = time.time()
-        problem.solve(solver=cp.ECOS_BB, mi_max_iters=1)
-        total_time += time.time() - end
+        problem.solve(solver=cp.ECOS_BB, mi_max_iters=1, verbose=True)
+        runtime = problem.solver_stats.solve_time
+        total_time += runtime
         converged = np.max(np.abs(delta.value - last_delta)) < CONVERENCE
         last_delta = delta.value
         ITER += 1
+        logger.info('Iters: {}'.format(ITER))
+        logger.info('Problem status: {}'.format(problem.status))
 
     logger.info('Alg time consumption: {}s'.format(total_time))
     logger.info('Optimal Problem objective value: {}'.format(problem.value))
-    logger.info('Iters: {}'.format(ITER))
-    logger.info('Problem status: {}'.format(problem.status))
     draw_traj(y_traj.value, vartheta.value, obstacles)
     return
 
@@ -150,10 +150,13 @@ def draw_traj(y, theta, obstacles):
             ax.arrow(_x, _y, dx, dy,head_width=1.5, head_length=1.5, fc='red', ec='red')
     
     plt.plot(x, y, zorder=0)
+    ax.set_xlim([0, 100])
+    ax.set_ylim([-40, 40])
     plt.axis('equal')
     plt.xlabel("x(m)")
     plt.ylabel("y(m)")
-    plt.savefig('./results/fig.png')
+    plt.savefig('./results/{}_fig.png'.format(cfg.SAVE_NAME))
+
 
 if __name__ == '__main__':
     main()
