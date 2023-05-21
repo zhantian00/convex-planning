@@ -6,11 +6,9 @@ An unofficial python implementation of artical:
 ![fig](./figs/test_fig.png)
 
 ## Requirements
------
-Python >= 3.7, numpy, cvxpy, ecos, matplotlib, yacs
+Python >= 3.7, numpy, matplotlib, yacs, cvxpy, ecos, (Mosek, etc.)
 
 ## Running
------
 You can modify configuration in `config.py`.
 
 To run with Alg 1
