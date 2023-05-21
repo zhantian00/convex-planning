@@ -10,8 +10,10 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-l', '--log-level', default='INFO', type=str,
                     choices=['DEBUG', 'INFO'],
                     help='Configure the logging level.')
-parser.add_argument('-a', '--alg', default=1, type=int, choices=[0,1,2],
-                    help='Choose algorithm 1 or 2 (or 0 for test).')
+parser.add_argument('-s', '--solver', default='ECOS_BB', type=str,
+                    help='Choose solver.')
+parser.add_argument('-a', '--alg', default=1, type=int, choices=[1,2],
+                    help='Choose algorithm 1 or 2.')
 args = parser.parse_args()
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s => %(message)s', level=args.log_level)
 logger = logging.getLogger("logger")
@@ -87,8 +89,7 @@ def solve_problem(cfg):
 
     # solve
     # ------------------
-    verbose = True if args.log_level=='DEBUG' else False
-    problem.solve(solver='ECOS_BB', max_iters=100, reltol=CONVERENCE, verbose=verbose)
+    problem.solve(solver=args.solver)
     runtime = problem.solver_stats.solve_time
     logger.info('Iters: {}'.format(problem.solver_stats.num_iters))
     logger.info('Problem status: {}'.format(problem.status))
