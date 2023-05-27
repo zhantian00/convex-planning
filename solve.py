@@ -39,7 +39,7 @@ def solve_problem(cfg):
     x_traj = np.arange(x_0, x_f, (x_f - x_0)/N)
     dx = abs(x_f - x_0) / N
     C = dx / V
-    CONVERENCE = cfg.RELATIVE_TOLERANCE * C * N
+    CONVERENCE = cfg.DELTA_TOLERANCE
     # define optimization variables
     # -----------------------------
     y_traj = Variable(N)
@@ -68,12 +68,8 @@ def solve_problem(cfg):
         vartheta[0] == yaw2vartheta(yaw_0),
         vartheta[N-1] == yaw2vartheta(yaw_f)
     ]
+    linear_inequality_constraint = dynamics_constraint + terminal_constraint
 
-    control_constraint = [cp.abs(u[i]) <= UAV_ANGULAR_RATE_MAX / V * (3 * delta.value[i]**2 * delta[i] - 2 * delta.value[2]**3)  for i in range(N)]
-
-    linear_inequality_constraint = dynamics_constraint + terminal_constraint + control_constraint
-
-    # generalized_inequality_constraint = [delta[i] >= cp.norm(1 + vartheta[i]) for i in range(N)]
     generalized_inequality_constraint = [cp.SOC(delta[i], cp.hstack([1, vartheta[i]])) for i in range(N)]
 
     discretized_constraint = []
@@ -85,17 +81,30 @@ def solve_problem(cfg):
         discretized_constraint += [eta[j] >= 0, eta[j] <= 1]
     
     constraints = linear_inequality_constraint + generalized_inequality_constraint + discretized_constraint
-    problem = Problem(objective, constraints)
 
     # solve
     # ------------------
-    problem.solve(solver=args.solver)
-    runtime = problem.solver_stats.solve_time
-    logger.info('Iters: {}'.format(problem.solver_stats.num_iters))
-    logger.info('Problem status: {}'.format(problem.status))
-    logger.info('Alg time consumption: {}s'.format(runtime))
+    import time
+    converged = False
+    runtime = 0
+    iters = 0
+    last_delta = delta.value
+    end = time.time()
+    while not converged:
+        control_constraint = [cp.abs(u[i]) <= UAV_ANGULAR_RATE_MAX / V * (3 * delta.value[i]**2 * delta[i] - 2 * delta.value[i]**3)  for i in range(N)]
+        problem = Problem(objective, constraints + control_constraint)
+        problem.solve(solver=args.solver)
+        runtime += problem.solver_stats.solve_time
+        iters += 1
+        logger.info('Iters: {}'.format(iters))
+        logger.info('Problem status: {}'.format(problem.status))
+        if args.alg == 1 and np.max(np.abs(last_delta - delta.value)) <= CONVERENCE: converged = True
+        if args.alg == 2: converged = True
+        last_delta = delta.value
+
+    logger.info('Alg time consumption: {}s ({}s)'.format(runtime, time.time() - end))
     logger.info('Optimal Problem objective value: {}'.format(problem.value))
-    logger.info('Decisions: {}'.format(eta.value))
+    logger.info('Decisions: {}'.format(np.round(eta.value)))
     draw_traj(y_traj.value, vartheta.value, obstacles)
 
     logger.debug([np.abs(u.value[i]) <= UAV_ANGULAR_RATE_MAX / V * delta.value[i]**3 for i in range(N)])
