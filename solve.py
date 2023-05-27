@@ -17,7 +17,8 @@ parser.add_argument('-a', '--alg', default=1, type=int, choices=[1,2],
 args = parser.parse_args()
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s => %(message)s', level=args.log_level)
 logger = logging.getLogger("logger")
-
+fh = logging.FileHandler('./results/{}.log'.format(cfg.SAVE_NAME))
+logger.addHandler(fh)
 
 def main():
     logger.info(args)
@@ -86,15 +87,16 @@ def solve_problem(cfg):
     # ------------------
     import time
     converged = False
-    runtime = 0
+    runtime_built_in, runtime_solve = 0, 0
     iters = 0
     last_delta = delta.value
-    end = time.time()
     while not converged:
         control_constraint = [cp.abs(u[i]) <= UAV_ANGULAR_RATE_MAX / V * (3 * delta.value[i]**2 * delta[i] - 2 * delta.value[i]**3)  for i in range(N)]
         problem = Problem(objective, constraints + control_constraint)
+        end = time.time()
         problem.solve(solver=args.solver)
-        runtime += problem.solver_stats.solve_time
+        runtime_solve += time.time() - end
+        runtime_built_in += problem.solver_stats.solve_time
         iters += 1
         logger.info('Iters: {}'.format(iters))
         logger.info('Problem status: {}'.format(problem.status))
@@ -102,7 +104,9 @@ def solve_problem(cfg):
         if args.alg == 2: converged = True
         last_delta = delta.value
 
-    logger.info('Alg time consumption: {}s ({}s)'.format(runtime, time.time() - end))
+    logger.info('--------------------RESULTS--------------------')
+    logger.info('Totol iters {}'.format(iters))
+    logger.info('Alg time consumption: {}ms (built-in {}ms)'.format(runtime_solve*1000, runtime_built_in*1000))
     logger.info('Optimal Problem objective value: {}'.format(problem.value))
     logger.info('Decisions: {}'.format(np.round(eta.value)))
     draw_traj(y_traj.value, vartheta.value, obstacles)
