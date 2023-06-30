@@ -1,7 +1,7 @@
 # 2D Collision Avoidance Trajectory Planning with MI-SOCP
 An unofficial python implementation of artical:
 
-[hidden for now]()
+[Zhang, Guoxu, and Xinfu Liu. "UAV Collision Avoidance Using Mixed-Integer Second-Order Cone Programming." Journal of Guidance, Control, and Dynamics 45.9 (2022): 1732-1738.](https://www.researchgate.net/publication/360330736_UAV_Collision_Avoidance_Using_Mixed-Integer_Second-Order_Cone_Programming)
 
 ![fig](./figs/test_fig.png)
 
